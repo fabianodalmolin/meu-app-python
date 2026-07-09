@@ -10,7 +10,7 @@ st.title("📄 Processador de Serviços Municipais (via PDF)")
 st.write("Faça o upload do arquivo PDF contendo a tabela de serviços para gerar sua planilha do Excel.")
 
 # 1. Abre caixa na tela para digitar o nome do município
-nome_municipio = st.text_input("Digite o nome do município:", placeholder="Ex: Florianópolis")
+nome_municipio = st.text_input("Digite o nome do município:", placeholder="Ex: Pomerode")
 
 # 2. Componente de upload para receber o arquivo PDF do usuário
 arquivo_pdf = st.file_uploader("Selecione o arquivo PDF da lista de serviços:", type=["pdf"])
@@ -35,32 +35,32 @@ if st.button("Processar Dados do PDF e Criar Planilha"):
                     continue
                 
                 for linha in tabela:
-                    # Remove linhas vazias ou cabeçalhos da tabela
-                    if not linha or any(item is None for item in linha):
+                    # Pula linhas totalmente vazias
+                    if not linha:
                         continue
                     
-                    # Limpa os espaços em branco de cada coluna detectada
-                    colunas = [str(c).strip().replace('\n', ' ') for c in linha]
+                    # Converte todos os elementos da linha para texto limpo e remove nulos
+                    colunas = [str(c).strip().replace('\n', ' ') if c is not None else "" for c in linha]
                     
-                    # Garante que temos pelo menos as colunas de Código e Descrição
+                    # Filtra para garantir que a linha possui dados úteis
                     if len(colunas) >= 2:
                         item = colunas[0]
                         descricao = colunas[1]
-                        # Pega a alíquota se ela existir, senão deixa em branco
+                        # Pega a alíquota se houver uma terceira coluna, senão deixa em branco
                         aliquota = colunas[2] if len(colunas) > 2 else ""
                         
-                        # Filtra linhas inúteis ou cabeçalhos textuais duplicados
-                        if "Subitem" in item or "Descrição" in item or item == "":
+                        # Ignora os cabeçalhos das tabelas que se repetem nas páginas
+                        if "Subitem" in item or "Descrição" in item or (item == "" and descricao == ""):
                             continue
                             
-                        dados_limpos.append([item, list(descricao), aliquota])
+                        dados_limpos.append([item, descricao, aliquota])
 
         # Se encontrou dados válidos extraídos do PDF
         if dados_limpos:
-            # 4. Criação do DataFrame estruturado
+            # 4. Criação do DataFrame estruturado (agora apenas com textos simples, sem listas!)
             df = pd.DataFrame(dados_limpos, columns=["ITEM", "DESCRIÇÃO DOS SERVIÇOS", "ALÍQUOTA"])
             
-            # Remove possíveis linhas duplicadas para deixar a planilha limpa
+            # Remove possíveis linhas duplicadas com segurança
             df = df.drop_duplicates()
 
             st.success("🎉 PDF processado com sucesso!")
@@ -83,4 +83,4 @@ if st.button("Processar Dados do PDF e Criar Planilha"):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.error("❌ Não foi possível extrair dados estruturados deste PDF. Verifique se ele possui uma tabela com linhas visíveis.")
+            st.error("❌ Não foi possível extrair dados estruturados deste PDF. Verifique se ele possui tabelas válidas.")
