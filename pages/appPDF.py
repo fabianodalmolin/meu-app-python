@@ -16,7 +16,7 @@ nome_municipio = st.text_input("Digite o nome do município:", placeholder="Ex: 
 arquivo_pdf = st.file_uploader("Selecione o arquivo PDF da lista de serviços:", type=["pdf"])
 
 # Botão para processar
-if st.button("Processador Dados do PDF e Criar Planilha"):
+if st.button("Processar Dados do PDF e Criar Planilha"):
     
     if not nome_municipio:
         st.warning("⚠️ Por favor, informe o nome do município!")
@@ -25,76 +25,43 @@ if st.button("Processador Dados do PDF e Criar Planilha"):
     else:
         dados_limpos = []
         
-        # 3. Extração e leitura de texto de todas as páginas do PDF enviado
+        # 3. Extração baseada nas linhas da tabela do PDF
         with pdfplumber.open(arquivo_pdf) as pdf:
             for pagina in pdf.pages:
-                texto_pagina = pagina.extract_text()
-                if not texto_pagina:
+                # Extrai os dados em formato de tabela (linhas e colunas estruturadas)
+                tabela = pagina.extract_table()
+                
+                if not tabela:
                     continue
                 
-                linhas = texto_pagina.split("\n")
-                
-                item_atual = None
-                descricao_atual = []
-                aliquota_atual = None
-
-                for linha in linhas:
-                    # Limpa espaços nas pontas da linha
-                    linha_limpa = linha.strip()
-                    
-                    # Pula cabeçalhos da página ou linhas divisórias
-                    if not linha_limpa or "Subitem" in linha_limpa or "Descrição" in linha_limpa or "Alíquota" in list(linha_limpa):
+                for linha in tabela:
+                    # Remove linhas vazias ou cabeçalhos da tabela
+                    if not linha or any(item is None for item in linha):
                         continue
                     
-                    # Divide a linha tentando identificar o código numérico no início (ex: 1.01, 11.04)
-                    partes = linha_limpa.split(" ", 1)
-                    primeira_palavra = partes[0]
+                    # Limpa os espaços em branco de cada coluna detectada
+                    colunas = [str(c).strip().replace('\n', ' ') for c in linha]
                     
-                    # Verifica se a linha começa com um número de subitem válido (ex: 1.01 ou 1) ou se é continuação
-                    # Checa se possui pontos ou se é um número inteiro de grupo principal (ex: "1", "2")
-                    eh_codigo = (primeira_palavra.replace(".", "").isdigit() and len(partes) > 1)
-                    
-                    if eh_codigo:
-                        # Se já havia um item sendo processado, salva ele antes de começar o novo
-                        if item_atual:
-                            dados_limpos.append([item_atual, " ".join(descricao_atual), aliquota_atual])
+                    # Garante que temos pelo menos as colunas de Código e Descrição
+                    if len(colunas) >= 2:
+                        item = colunas[0]
+                        descricao = colunas[1]
+                        # Pega a alíquota se ela existir, senão deixa em branco
+                        aliquota = colunas[2] if len(colunas) > 2 else ""
                         
-                        item_atual = primeira_palavra
-                        resto_linha = partes[1].strip()
-                        
-                        # Tenta capturar a alíquota no final da linha (ex: "2,0%" ou "3,5%")
-                        if resto_linha.endswith("%") or resto_linha.endswith("-"):
-                            partes_fim = resto_linha.rsplit(" ", 1)
-                            descricao_atual = [partes_fim[0].strip()]
-                            aliquota_atual = partes_fim[1].strip()
-                        else:
-                            descricao_atual = [resto_linha]
-                            aliquota_atual = ""
-                    else:
-                        # Se a linha não começa com número, ela é a continuação da descrição do item anterior
-                        # Verifica se o final da linha trouxe a alíquota pendente do item
-                        if linha_limpa.endswith("%") or linha_limpa.endswith("-"):
-                            partes_fim = linha_limpa.rsplit(" ", 1)
-                            if len(partes_fim) > 1:
-                                descricao_atual.append(partes_fim[0].strip())
-                                aliquota_atual = partes_fim[1].strip()
-                            else:
-                                aliquota_atual = linha_limpa
-                        else:
-                            descricao_atual.append(linha_limpa)
-
-                # Salva o último item processado da página
-                if item_atual:
-                    dados_limpos.append([item_atual, " ".join(descricao_atual), aliquota_atual])
+                        # Filtra linhas inúteis ou cabeçalhos textuais duplicados
+                        if "Subitem" in item or "Descrição" in item or item == "":
+                            continue
+                            
+                        dados_limpos.append([item, list(descricao), aliquota])
 
         # Se encontrou dados válidos extraídos do PDF
         if dados_limpos:
             # 4. Criação do DataFrame estruturado
             df = pd.DataFrame(dados_limpos, columns=["ITEM", "DESCRIÇÃO DOS SERVIÇOS", "ALÍQUOTA"])
             
-            # Limpeza fina: remove linhas duplicadas ou vazias geradas no processo
-            df = df.drop_duplicates().dropna(subset=["ITEM"])
-            df = df[df["ITEM"] != ""]
+            # Remove possíveis linhas duplicadas para deixar a planilha limpa
+            df = df.drop_duplicates()
 
             st.success("🎉 PDF processado com sucesso!")
             st.subheader("Prévia das Alíquotas Encontradas:")
@@ -116,4 +83,4 @@ if st.button("Processador Dados do PDF e Criar Planilha"):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.error("❌ Não foi possível extrair dados estruturados deste PDF. Verifique se ele possui texto selecionável.")
+            st.error("❌ Não foi possível extrair dados estruturados deste PDF. Verifique se ele possui uma tabela com linhas visíveis.")
